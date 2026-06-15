@@ -1,0 +1,698 @@
+"use client";
+
+import { useEffect, useRef, useState, useTransition } from "react";
+import {
+  Bot,
+  Check,
+  Copy,
+  FolderOpen,
+  Loader2,
+  Paperclip,
+  Plus,
+  RefreshCw,
+  Send,
+  Sparkles,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import {
+  listWorkspaceFilesForAria,
+  sendAriaMessage,
+  type AttachmentInput,
+  type HistoryMessage,
+  type WorkspaceFileOption,
+} from "@/features/aria/actions";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Markdown } from "@/components/shared/markdown";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+interface ChatAttachment {
+  name: string;
+  mimeType: string;
+  previewUrl?: string;
+}
+
+interface ChatMessage {
+  id: string;
+  role: "user" | "model";
+  content: string;
+  attachments?: ChatAttachment[];
+  loading?: boolean;
+  error?: boolean;
+}
+
+interface PendingFile {
+  file: File;
+  base64: string;
+  previewUrl?: string;
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // strip the data URL prefix (e.g. "data:image/png;base64,")
+      resolve(result.split(",")[1] ?? "");
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+export function AriaChat({
+  aiEnabled,
+  userName,
+}: {
+  aiEnabled: boolean;
+  userName: string;
+}) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [selectedWorkspaceFiles, setSelectedWorkspaceFiles] = useState<
+    WorkspaceFileOption[]
+  >([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileOption[]>(
+    []
+  );
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [, startTransition] = useTransition();
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Auto-grow the textarea up to its max height as the user types.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+
+    const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+    const oversized = files.filter((f) => f.size > MAX_SIZE);
+    if (oversized.length) {
+      toast.error(
+        `File${oversized.length > 1 ? "s" : ""} too large (max 5 MB): ${oversized.map((f) => f.name).join(", ")}`
+      );
+    }
+
+    const valid = files.filter((f) => f.size <= MAX_SIZE);
+    const newPending = await Promise.all(
+      valid.map(async (file) => {
+        const base64 = await readFileAsBase64(file);
+        const previewUrl = file.type.startsWith("image/")
+          ? await readFileAsDataUrl(file)
+          : undefined;
+        return { file, base64, previewUrl };
+      })
+    );
+
+    setPendingFiles((prev) => [...prev, ...newPending]);
+    // reset the input so the same file can be re-selected
+    e.target.value = "";
+  }
+
+  function removePendingFile(index: number) {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function openPicker() {
+    setPickerOpen(true);
+    setLoadingFiles(true);
+    try {
+      const files = await listWorkspaceFilesForAria();
+      setWorkspaceFiles(files);
+    } catch {
+      toast.error("Couldn't load workspace files.");
+    } finally {
+      setLoadingFiles(false);
+    }
+  }
+
+  function toggleWorkspaceFile(file: WorkspaceFileOption) {
+    setSelectedWorkspaceFiles((prev) =>
+      prev.some((f) => f.id === file.id)
+        ? prev.filter((f) => f.id !== file.id)
+        : [...prev, file]
+    );
+  }
+
+  function removeWorkspaceFile(id: string) {
+    setSelectedWorkspaceFiles((prev) => prev.filter((f) => f.id !== id));
+  }
+
+  /**
+   * Sends a turn to Aria. `history` is the settled conversation that precedes
+   * this turn; a loading bubble is appended and resolved in place.
+   */
+  function runTurn(
+    history: HistoryMessage[],
+    text: string,
+    attachmentInputs: AttachmentInput[],
+    workspaceFileIds: string[]
+  ) {
+    setIsLoading(true);
+
+    startTransition(async () => {
+      const result = await sendAriaMessage(
+        history,
+        text,
+        attachmentInputs,
+        workspaceFileIds
+      );
+
+      if (result.error) {
+        toast.error(result.error);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.loading
+              ? { ...m, loading: false, error: true, content: result.error! }
+              : m
+          )
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.loading
+              ? { ...m, loading: false, content: result.message ?? "" }
+              : m
+          )
+        );
+      }
+      setIsLoading(false);
+    });
+  }
+
+  async function handleSend() {
+    const text = input.trim();
+    if (!text && pendingFiles.length === 0 && selectedWorkspaceFiles.length === 0)
+      return;
+    if (isLoading) return;
+
+    const attachments: ChatAttachment[] = [
+      ...pendingFiles.map((pf) => ({
+        name: pf.file.name,
+        mimeType: pf.file.type,
+        previewUrl: pf.previewUrl,
+      })),
+      ...selectedWorkspaceFiles.map((wf) => ({
+        name: wf.name,
+        mimeType: wf.mimeType ?? "",
+      })),
+    ];
+
+    const attachmentInputs: AttachmentInput[] = pendingFiles.map((pf) => ({
+      data: pf.base64,
+      mimeType: pf.file.type,
+      name: pf.file.name,
+    }));
+
+    const workspaceFileIds = selectedWorkspaceFiles.map((f) => f.id);
+
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: text,
+      attachments: attachments.length ? attachments : undefined,
+    };
+
+    const loadingMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "model",
+      content: "",
+      loading: true,
+    };
+
+    // history = all prior settled messages; userMsg is the current turn
+    const history: HistoryMessage[] = messages
+      .filter((m) => !m.loading && !m.error)
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    setMessages((prev) => [...prev, userMsg, loadingMsg]);
+    setInput("");
+    setPendingFiles([]);
+    setSelectedWorkspaceFiles([]);
+
+    runTurn(history, text, attachmentInputs, workspaceFileIds);
+  }
+
+  /** Re-asks Aria for the most recent user turn, replacing the last reply. */
+  function handleRegenerate() {
+    if (isLoading) return;
+    // Find the last user message and drop everything after it.
+    const lastUserIdx = [...messages]
+      .map((m) => m.role)
+      .lastIndexOf("user");
+    if (lastUserIdx === -1) return;
+
+    const lastUser = messages[lastUserIdx];
+    const history: HistoryMessage[] = messages
+      .slice(0, lastUserIdx)
+      .filter((m) => !m.loading && !m.error)
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    const loadingMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "model",
+      content: "",
+      loading: true,
+    };
+
+    setMessages([...messages.slice(0, lastUserIdx + 1), loadingMsg]);
+    // Attachments aren't re-sent on regenerate (originals aren't retained).
+    runTurn(history, lastUser.content, [], []);
+  }
+
+  function handleNewChat() {
+    if (isLoading) return;
+    setMessages([]);
+    setInput("");
+    setPendingFiles([]);
+    setSelectedWorkspaceFiles([]);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }
+
+  const canSend =
+    !isLoading &&
+    (input.trim().length > 0 ||
+      pendingFiles.length > 0 ||
+      selectedWorkspaceFiles.length > 0);
+
+  if (!aiEnabled) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+        <div className="bg-muted flex size-14 items-center justify-center rounded-full">
+          <Bot className="text-muted-foreground size-7" />
+        </div>
+        <div>
+          <p className="font-medium">Aria is not available</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Either the AI service is not configured or you don&apos;t have
+            permission to use AI features.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const lastModelIdx = [...messages].map((m) => m.role).lastIndexOf("model");
+
+  return (
+    <div className="flex h-full flex-col rounded-lg border">
+      {/* Header */}
+      {messages.length > 0 && (
+        <div className="flex items-center justify-between border-b px-4 py-2">
+          <div className="text-muted-foreground flex items-center gap-1.5 text-sm font-medium">
+            <Sparkles className="text-primary size-3.5" />
+            Aria
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 text-xs"
+            disabled={isLoading}
+            onClick={handleNewChat}
+          >
+            <Plus className="size-3.5" />
+            New chat
+          </Button>
+        </div>
+      )}
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {messages.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+            <div className="bg-primary/10 flex size-16 items-center justify-center rounded-full">
+              <Sparkles className="text-primary size-8" />
+            </div>
+            <div>
+              <p className="text-lg font-semibold">
+                Hi{userName ? `, ${userName.split(" ")[0]}` : ""}! I&apos;m Aria
+              </p>
+              <p className="text-muted-foreground mt-1 max-w-sm text-sm">
+                Your AI assistant for this CRM. Ask me about clients,
+                contacts, deals, tasks — or upload a file for analysis.
+              </p>
+            </div>
+            <div className="mt-2 flex flex-wrap justify-center gap-2">
+              {[
+                "How many open deals do we have?",
+                "Summarise our pipeline",
+                "Which tasks are overdue?",
+                "List our top clients",
+              ].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  onClick={() => setInput(suggestion)}
+                  className="bg-muted hover:bg-muted/80 rounded-full px-3 py-1.5 text-xs transition-colors"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {messages.map((msg, idx) => (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                canRegenerate={
+                  !isLoading && idx === lastModelIdx && !msg.loading
+                }
+                onRegenerate={handleRegenerate}
+              />
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+      </div>
+
+      {/* Pending file chips */}
+      {(pendingFiles.length > 0 || selectedWorkspaceFiles.length > 0) && (
+        <div className="flex flex-wrap gap-2 border-t px-4 py-2">
+          {pendingFiles.map((pf, i) => (
+            <div
+              key={`pf-${i}`}
+              className="bg-muted flex items-center gap-1.5 rounded-md px-2 py-1 text-xs"
+            >
+              {pf.previewUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={pf.previewUrl}
+                  alt={pf.file.name}
+                  className="size-5 rounded object-cover"
+                />
+              ) : (
+                <Paperclip className="size-3" />
+              )}
+              <span className="max-w-[120px] truncate">{pf.file.name}</span>
+              <button
+                onClick={() => removePendingFile(i)}
+                className="text-muted-foreground hover:text-foreground ml-0.5"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ))}
+          {selectedWorkspaceFiles.map((wf) => (
+            <div
+              key={`wf-${wf.id}`}
+              className="bg-muted flex items-center gap-1.5 rounded-md px-2 py-1 text-xs"
+            >
+              <FolderOpen className="size-3" />
+              <span className="max-w-[120px] truncate">{wf.name}</span>
+              <button
+                onClick={() => removeWorkspaceFile(wf.id)}
+                className="text-muted-foreground hover:text-foreground ml-0.5"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Input bar */}
+      <div className="flex items-end gap-2 border-t p-3">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          multiple
+          accept="image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx"
+          onChange={handleFileSelect}
+        />
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="shrink-0"
+          disabled={isLoading}
+          onClick={() => fileInputRef.current?.click()}
+          title="Attach file"
+        >
+          <Paperclip className="size-4" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="shrink-0"
+          disabled={isLoading}
+          onClick={openPicker}
+          title="Add a file from the Files section"
+        >
+          <FolderOpen className="size-4" />
+        </Button>
+        <Textarea
+          ref={textareaRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask Aria anything… (Shift+Enter for new line)"
+          className="min-h-[44px] max-h-40 resize-none"
+          rows={1}
+          disabled={isLoading}
+        />
+        <Button
+          type="button"
+          size="icon"
+          className="shrink-0"
+          disabled={!canSend}
+          onClick={handleSend}
+          title="Send"
+        >
+          <Send className="size-4" />
+        </Button>
+      </div>
+
+      {/* Workspace file picker */}
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add a file for Aria to read</DialogTitle>
+            <DialogDescription>
+              Pick one or more files from your workspace Files section. Aria
+              will read their contents.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-80 overflow-y-auto">
+            {loadingFiles ? (
+              <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm">
+                <Loader2 className="size-4 animate-spin" />
+                Loading files…
+              </div>
+            ) : workspaceFiles.length === 0 ? (
+              <p className="text-muted-foreground py-8 text-center text-sm">
+                No files found. Upload files in the Files section first.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {workspaceFiles.map((file) => {
+                  const selected = selectedWorkspaceFiles.some(
+                    (f) => f.id === file.id
+                  );
+                  return (
+                    <li key={file.id}>
+                      <button
+                        type="button"
+                        onClick={() => toggleWorkspaceFile(file)}
+                        className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors ${
+                          selected ? "bg-primary/10" : "hover:bg-muted"
+                        }`}
+                      >
+                        <span
+                          className={`flex size-4 shrink-0 items-center justify-center rounded border ${
+                            selected
+                              ? "bg-primary border-primary text-primary-foreground"
+                              : "border-input"
+                          }`}
+                        >
+                          {selected && <Check className="size-3" />}
+                        </span>
+                        <Paperclip className="text-muted-foreground size-3.5 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">
+                          {file.name}
+                        </span>
+                        <span className="text-muted-foreground shrink-0 text-xs">
+                          {formatFileSize(file.size)}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground text-xs">
+              {selectedWorkspaceFiles.length} selected
+            </span>
+            <Button type="button" size="sm" onClick={() => setPickerOpen(false)}>
+              Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function formatFileSize(bytes: number | null): string {
+  if (bytes == null) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function MessageBubble({
+  message,
+  canRegenerate = false,
+  onRegenerate,
+}: {
+  message: ChatMessage;
+  canRegenerate?: boolean;
+  onRegenerate?: () => void;
+}) {
+  const isUser = message.role === "user";
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    if (!message.content) return;
+    navigator.clipboard.writeText(message.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[80%] space-y-1">
+          {message.attachments?.map((att, i) =>
+            att.previewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={i}
+                src={att.previewUrl}
+                alt={att.name}
+                className="ml-auto max-h-48 rounded-lg object-cover"
+              />
+            ) : (
+              <div
+                key={i}
+                className="bg-muted ml-auto flex items-center gap-1.5 rounded-md px-3 py-2 text-xs"
+              >
+                <Paperclip className="size-3 shrink-0" />
+                <span className="truncate">{att.name}</span>
+              </div>
+            )
+          )}
+          {message.content && (
+            <div className="bg-primary text-primary-foreground ml-auto w-fit rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm">
+              <p className="whitespace-pre-wrap">{message.content}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-3">
+      <div className="bg-primary/10 mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full">
+        <Sparkles className="text-primary size-3.5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        {message.loading ? (
+          <div className="bg-muted w-fit rounded-2xl rounded-tl-sm px-4 py-3">
+            <div className="flex gap-1">
+              <span className="bg-muted-foreground/50 size-1.5 animate-bounce rounded-full [animation-delay:0ms]" />
+              <span className="bg-muted-foreground/50 size-1.5 animate-bounce rounded-full [animation-delay:150ms]" />
+              <span className="bg-muted-foreground/50 size-1.5 animate-bounce rounded-full [animation-delay:300ms]" />
+            </div>
+          </div>
+        ) : (
+          <>
+            <div
+              className={`w-fit max-w-[90%] rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm ${
+                message.error
+                  ? "bg-destructive/10 text-destructive border border-destructive/20"
+                  : "bg-muted"
+              }`}
+            >
+              {message.error ? (
+                <p className="whitespace-pre-wrap">{message.content}</p>
+              ) : (
+                <Markdown content={message.content} />
+              )}
+            </div>
+            {!message.error && message.content && (
+              <div className="mt-1.5 flex items-center gap-1">
+                <button
+                  onClick={copy}
+                  title="Copy"
+                  className="text-muted-foreground hover:text-foreground flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors"
+                >
+                  {copied ? (
+                    <Check className="size-3" />
+                  ) : (
+                    <Copy className="size-3" />
+                  )}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+                {canRegenerate && onRegenerate && (
+                  <button
+                    onClick={onRegenerate}
+                    title="Regenerate"
+                    className="text-muted-foreground hover:text-foreground flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors"
+                  >
+                    <RefreshCw className="size-3" />
+                    Regenerate
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
