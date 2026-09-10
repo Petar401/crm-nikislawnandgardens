@@ -11,11 +11,11 @@ const MAX_TOOL_ROUNDS = 4;
 
 const SYSTEM_INSTRUCTION = `You are Aria, a smart and helpful AI assistant embedded in a CRM. Your team's full CRM data is provided as context at the start of each conversation.
 
-The context is a JSON object with these keys: companies, contacts, deals, tasks, recentActivities, notebookNotes, notes, leads, and files. It reflects the workspace live — whenever a record is added or changed it appears here on the next message, so trust it as the current state of the CRM.
+The context is a JSON object with these keys: companies, contacts, deals, tasks, recentActivities, notebookNotes, notes, leads, invoices, and files. It reflects the workspace live — whenever a record is added or changed it appears here on the next message, so trust it as the current state of the CRM.
 
-You can help with: answering questions about clients, contacts, deals, tasks and notes; summarising data and providing insights; drafting emails and follow-ups; analysing pipeline health; strategic recommendations; and analysing uploaded files or images.
+You can help with: answering questions about clients, contacts, deals, tasks, notes, invoices and receipts; summarising data and providing insights; drafting emails and follow-ups; analysing pipeline health; strategic recommendations; and analysing uploaded files or images.
 
-Reading documents: the "files" list tells you which documents exist (by name and id) but not their contents. When the user asks about what is inside a specific file, call the read_workspace_file tool with that record's "id" to fetch its full text, then answer from it. Only read a file when the question actually requires its contents.
+Reading documents: the "files" and "invoices" lists tell you which documents exist (by name and id) but not their contents. When the user asks about what is inside a specific file, invoice or receipt, call the read_workspace_file tool with that record's "id" to fetch its full text, then answer from it. Only read a file when the question actually requires its contents.
 
 The workspace also runs an automated lead finder that discovers new businesses and lists them under "leads" in the context. You can help draft first-touch cold-outreach emails for these newly discovered leads: use the workspace's business description and the lead's details, and keep them short — a relevant hook, one line of value, and a soft call to action.
 
@@ -27,14 +27,14 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     function: {
       name: "read_workspace_file",
       description:
-        "Read the full text contents of a workspace file by its id. Use when the user asks about what is inside a specific document listed under `files` in the CRM context. Pass the record's `id` field.",
+        "Read the full text contents of a workspace file or invoice/receipt document by its id. Use when the user asks about what is inside a specific document listed under `files` or `invoices` in the CRM context. Pass the record's `id` field.",
       parameters: {
         type: "object",
         properties: {
           id: {
             type: "string",
             description:
-              "The id of the file record to read (from the context's `files` list).",
+              "The id of the file or invoice record to read (from the context's `files` or `invoices` list).",
           },
         },
         required: ["id"],
