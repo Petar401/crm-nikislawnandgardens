@@ -28,6 +28,9 @@ import { draftLeadEmail } from "@/features/ai/actions";
 import { scoreTier, SCORE_TIER_LABEL, SCORE_TIER_STYLE } from "@/features/leads/score";
 import { LeadForm } from "@/features/leads/components/lead-form";
 import { ConvertLeadDialog } from "@/features/leads/components/convert-lead-dialog";
+import { EnrichButton } from "@/features/apollo/components/enrich-button";
+import { getApolloEmailStatus } from "@/features/apollo/lead-raw";
+import { EmailStatusBadge } from "@/components/shared/email-status-badge";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -75,6 +78,7 @@ interface LeadsTableProps {
   canDelete: boolean;
   canCreateDeal: boolean;
   aiEnabled: boolean;
+  apolloEnabled: boolean;
 }
 
 type SortKey = "score" | "newest" | "name";
@@ -100,6 +104,7 @@ export function LeadsTable({
   canDelete,
   canCreateDeal,
   aiEnabled,
+  apolloEnabled,
 }: LeadsTableProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -347,7 +352,12 @@ export function LeadsTable({
                       <div>
                         <div>{lead.contact_name}</div>
                         {lead.contact_email && (
-                          <div className="text-xs">{lead.contact_email}</div>
+                          <div className="flex items-center gap-1.5 text-xs">
+                            {lead.contact_email}
+                            {lead.source === "apollo" && (
+                              <EmailStatusBadge status={getApolloEmailStatus(lead.raw)} />
+                            )}
+                          </div>
                         )}
                       </div>
                     ) : (
@@ -393,6 +403,9 @@ export function LeadsTable({
                             <X className="size-4 text-red-600" />
                           </Button>
                         </>
+                      )}
+                      {apolloEnabled && canUpdate && (
+                        <EnrichButton leadId={lead.id} />
                       )}
                       {(canUpdate || canDelete) && (
                         <DropdownMenu>
