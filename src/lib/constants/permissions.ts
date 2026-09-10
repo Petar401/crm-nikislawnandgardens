@@ -51,6 +51,8 @@ export const PERMISSION_KEYS = [
   "products.delete",
   "notifications.view",
   "audit.view",
+  "email.view",
+  "email.send",
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -184,6 +186,13 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     label: "Audit",
     permissions: [
       { key: "audit.view", description: "View the workspace audit log" },
+    ],
+  },
+  {
+    label: "Email",
+    permissions: [
+      { key: "email.view", description: "View the mailbox & sent email" },
+      { key: "email.send", description: "Compose & send email" },
     ],
   },
 ];
