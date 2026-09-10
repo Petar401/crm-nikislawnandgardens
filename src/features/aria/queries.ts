@@ -33,7 +33,7 @@ export interface AriaFileRef {
   mime_type: string | null;
   storage_bucket: string;
   storage_path: string;
-  source: "attachment";
+  source: "attachment" | "invoice";
 }
 
 export interface CrmContext {
@@ -54,6 +54,7 @@ export async function getCrmContext(workspaceId: string): Promise<CrmContext> {
     notebookNotes,
     notes,
     leads,
+    invoices,
     attachments,
   ] = await Promise.all([
     supabase
@@ -111,6 +112,14 @@ export async function getCrmContext(workspaceId: string): Promise<CrmContext> {
       .order("match_score", { ascending: false, nullsFirst: false })
       .limit(50),
     supabase
+      .from("invoices")
+      .select(
+        "id,doc_type,vendor,amount,currency,invoice_date,file_name,mime_type,storage_bucket,storage_path"
+      )
+      .eq("workspace_id", workspaceId)
+      .order("created_at", { ascending: false })
+      .limit(LIST_CAP),
+    supabase
       .from("attachments")
       .select(
         "id,file_name,mime_type,entity_type,file_size,storage_bucket,storage_path"
@@ -128,25 +137,44 @@ export async function getCrmContext(workspaceId: string): Promise<CrmContext> {
     storage_path: string;
   };
 
+  const invoiceRows = rows("invoices", invoices) as (StoredFile & {
+    doc_type: string;
+    vendor: string | null;
+    amount: number | null;
+    currency: string | null;
+    invoice_date: string | null;
+  })[];
   const attachmentRows = rows("attachments", attachments) as (StoredFile & {
     entity_type: string;
     file_size: number | null;
   })[];
 
   const files = new Map<string, AriaFileRef>();
-  attachmentRows.forEach((a) => {
-    files.set(a.id, {
-      id: a.id,
-      file_name: a.file_name,
-      mime_type: a.mime_type,
-      storage_bucket: a.storage_bucket,
-      storage_path: a.storage_path,
-      source: "attachment",
+  const register = (rec: StoredFile, source: "attachment" | "invoice") => {
+    files.set(rec.id, {
+      id: rec.id,
+      file_name: rec.file_name,
+      mime_type: rec.mime_type,
+      storage_bucket: rec.storage_bucket,
+      storage_path: rec.storage_path,
+      source,
     });
-  });
+  };
+  attachmentRows.forEach((a) => register(a, "attachment"));
+  invoiceRows.forEach((inv) => register(inv, "invoice"));
 
-  // Model-facing view: identity + business fields, but never the internal
-  // storage bucket/path (Aria reads files via read_workspace_file by id).
+  // Model-facing views: expose identity + business fields, but never the
+  // internal storage bucket/path (Aria reads files via read_workspace_file by id).
+  const invoicesView = invoiceRows.map((i) => ({
+    id: i.id,
+    doc_type: i.doc_type,
+    vendor: i.vendor,
+    amount: i.amount,
+    currency: i.currency,
+    invoice_date: i.invoice_date,
+    file_name: i.file_name,
+    mime_type: i.mime_type,
+  }));
   const filesView = attachmentRows.map((a) => ({
     id: a.id,
     file_name: a.file_name,
@@ -164,6 +192,7 @@ export async function getCrmContext(workspaceId: string): Promise<CrmContext> {
     notebookNotes: rows("notebook_notes", notebookNotes),
     notes: rows("notes", notes),
     leads: rows("leads", leads),
+    invoices: invoicesView,
     files: filesView,
   });
 
