@@ -30,6 +30,8 @@ import {
 import { ApolloKeySettings } from "@/features/apollo/components/apollo-key-settings";
 import { getNotificationPreferences } from "@/features/notifications/queries";
 import { PreferencesPanel } from "@/features/notifications/components/preferences-panel";
+import { getRoles } from "@/features/permissions/queries";
+import { RoleManager } from "@/features/permissions/components/role-manager";
 import { TeamSettings } from "@/features/team/components/team-settings";
 import { InviteMemberDialog } from "@/features/team/components/invite-member-dialog";
 import { ChangePasswordForm } from "@/features/auth/components/change-password-form";
@@ -63,6 +65,7 @@ export default async function SettingsPage() {
     apolloConfigured,
     apolloSettings,
     tokens,
+    roles,
   ] = await Promise.all([
     isAiConfigured(ctx.workspace.id),
     canManageAiKey
@@ -82,6 +85,7 @@ export default async function SettingsPage() {
       ? getWorkspaceApolloSettings(ctx.workspace.id)
       : Promise.resolve(null),
     canManageTokens ? getApiTokens(ctx.member.id) : Promise.resolve([]),
+    canViewTeam ? getRoles(ctx.workspace.id) : Promise.resolve([]),
   ]);
   const headerList = await headers();
   const origin =
@@ -210,6 +214,17 @@ export default async function SettingsPage() {
             <PreferencesPanel initial={notificationPrefs} />
           </CardContent>
         </Card>
+
+        {canViewTeam && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Roles</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <RoleManager roles={roles} canEdit={canEditRoles} />
+            </CardContent>
+          </Card>
+        )}
 
         {canViewTeam && (
           <div>

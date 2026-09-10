@@ -6,16 +6,18 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuthContext } from "@/lib/auth/session";
 import { requirePermission } from "@/lib/auth/permissions";
-import { PERMISSION_KEYS } from "@/lib/constants/permissions";
+import { PERMISSION_KEYS, type PermissionKey } from "@/lib/constants/permissions";
 import {
   getMemberPermissionState,
   type MemberPermissionState,
 } from "@/features/permissions/queries";
+import { ROLE_TEMPLATES, type RoleName } from "@/features/permissions/role-templates";
 import { auditLog } from "@/features/audit/log";
 import type { WorkspaceMember } from "@/lib/db/types";
 
 export interface ActionResult {
   error?: string;
+  id?: string;
 }
 
 /** Loads a member's editable permission state (for the settings panel). */
@@ -101,6 +103,89 @@ export async function saveMemberPermissions(
       is_full_access: parsed.data.isFullAccess,
       permissions: parsed.data.permissions,
     },
+  });
+
+  revalidatePath("/settings");
+  return {};
+}
+
+const createRoleSchema = z.object({
+  name: z.string().min(1).max(60),
+  templateName: z.string().optional(),
+});
+
+export async function createRole(values: unknown): Promise<ActionResult> {
+  const parsed = createRoleSchema.safeParse(values);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const ctx = await requireAuthContext();
+  await requirePermission("team.edit_roles");
+
+  const supabase = await createClient();
+  const { data: role, error } = await supabase
+    .from("roles")
+    .insert({ workspace_id: ctx.workspace.id, name: parsed.data.name })
+    .select("id")
+    .single<{ id: string }>();
+  if (error) return { error: error.message };
+
+  const template = parsed.data.templateName as RoleName | undefined;
+  const keys: PermissionKey[] =
+    template && template in ROLE_TEMPLATES ? ROLE_TEMPLATES[template] : [];
+  if (keys.length > 0) {
+    await supabase.from("role_permissions").insert(
+      keys.map((key) => ({
+        role_id: role.id,
+        permission_key: key,
+        allowed: true,
+      }))
+    );
+  }
+
+  await auditLog({
+    workspaceId: ctx.workspace.id,
+    actorUserId: ctx.userId,
+    action: "role.created",
+    entityType: "role",
+    entityId: role.id,
+    after: { name: parsed.data.name, template },
+  });
+
+  revalidatePath("/settings");
+  return { id: role.id };
+}
+
+export async function deleteRole(roleId: string): Promise<ActionResult> {
+  const ctx = await requireAuthContext();
+  await requirePermission("team.edit_roles");
+
+  const supabase = await createClient();
+  const { data: role } = await supabase
+    .from("roles")
+    .select("name, is_default")
+    .eq("id", roleId)
+    .eq("workspace_id", ctx.workspace.id)
+    .maybeSingle<{ name: string; is_default: boolean }>();
+
+  if (!role) return { error: "Role not found." };
+  if (role.is_default)
+    return { error: "You can't delete the workspace's default role." };
+
+  const { error } = await supabase
+    .from("roles")
+    .delete()
+    .eq("id", roleId)
+    .eq("workspace_id", ctx.workspace.id);
+  if (error) return { error: error.message };
+
+  await auditLog({
+    workspaceId: ctx.workspace.id,
+    actorUserId: ctx.userId,
+    action: "role.deleted",
+    entityType: "role",
+    entityId: roleId,
+    before: role,
   });
 
   revalidatePath("/settings");

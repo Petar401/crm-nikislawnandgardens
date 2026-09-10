@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 import { ThemeProvider } from "@/components/layout/theme-provider";
+import { WebVitals } from "@/components/layout/web-vitals";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default function RootLayout({
         >
           {children}
           <Toaster richColors position="top-right" />
+          <WebVitals />
         </ThemeProvider>
       </body>
     </html>
