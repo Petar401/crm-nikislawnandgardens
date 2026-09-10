@@ -1,0 +1,40 @@
+import "server-only";
+
+import { createAiClient } from "@/features/ai/client";
+import { AI_PROVIDERS } from "@/features/ai/providers";
+import type { AiCredentials } from "@/features/ai/settings-queries";
+
+/**
+ * Runs a single-turn generation server-side using the given provider
+ * credentials. The key never leaves the server.
+ */
+export async function generateText(
+  prompt: string,
+  systemInstruction: string,
+  credentials: AiCredentials
+): Promise<string> {
+  const client = createAiClient(credentials.provider, credentials.apiKey);
+  const model =
+    credentials.model ?? AI_PROVIDERS[credentials.provider].defaultModel;
+
+  const completion = await client.chat.completions.create(
+    {
+      model,
+      messages: [
+        { role: "system", content: systemInstruction },
+        { role: "user", content: prompt },
+      ],
+    },
+    // Fail fast rather than risk a single stalled request eating a bulk
+    // campaign run's whole execution budget.
+    { signal: AbortSignal.timeout(20_000) }
+  );
+
+  if (!completion.choices?.length) {
+    throw new Error(
+      "The selected model returned no response — it may not be available right now. Try a different model in Settings."
+    );
+  }
+
+  return completion.choices[0].message.content?.trim() ?? "";
+}

@@ -3,7 +3,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAuthContext } from "@/lib/auth/session";
 import { requirePermission } from "@/lib/auth/permissions";
-import { generateText, isAiConfigured } from "@/features/ai/gemini";
+import { generateText } from "@/features/ai/generate-text";
+import {
+  resolveAiCredentials,
+  type AiCredentials,
+} from "@/features/ai/settings-queries";
 import { logActivity } from "@/features/activities/log";
 import type { Deal, Lead } from "@/lib/db/types";
 
@@ -17,19 +21,21 @@ const SYSTEM =
   "Write in clear British English. Be specific and actionable. Never invent facts.";
 
 type AuthorizeResult =
-  | { ok: true; ws: string; user: string }
+  | { ok: true; ws: string; user: string; credentials: AiCredentials }
   | { ok: false; error: string };
 
 async function authorizeAi(): Promise<AuthorizeResult> {
-  if (!isAiConfigured()) {
-    return {
-      ok: false,
-      error: "AI is not configured. Add a GROQ_API_KEY to enable it.",
-    };
-  }
   const ctx = await requireAuthContext();
   await requirePermission("ai.use");
-  return { ok: true, ws: ctx.workspace.id, user: ctx.userId };
+
+  const credentials = await resolveAiCredentials(ctx.workspace.id);
+  if (!credentials) {
+    return {
+      ok: false,
+      error: "AI is not configured. Add an API key in Settings.",
+    };
+  }
+  return { ok: true, ws: ctx.workspace.id, user: ctx.userId, credentials };
 }
 
 export async function summarizeText(input: string): Promise<AiResult> {
@@ -40,7 +46,8 @@ export async function summarizeText(input: string): Promise<AiResult> {
   try {
     const text = await generateText(
       `Summarize the following note in 2-3 short sentences, capturing key facts and any action items:\n\n${input}`,
-      SYSTEM
+      SYSTEM,
+      auth.credentials
     );
     return { text };
   } catch (e) {
@@ -84,7 +91,8 @@ export async function suggestNextStep(dealId: string): Promise<AiResult> {
     const text = await generateText(
       `Based on this deal, suggest the single best next step to move it forward. ` +
         `Give one short paragraph and a one-line recommended action.\n\n${context}`,
-      SYSTEM
+      SYSTEM,
+      auth.credentials
     );
     await logActivity({
       workspaceId: auth.ws,
@@ -117,7 +125,8 @@ export async function draftFollowUp(dealId: string): Promise<AiResult> {
       `Draft a short, friendly but professional follow-up email for this deal. ` +
         `Keep it under 120 words. Deal: ${deal.name}, value ${deal.value ?? "?"} ${deal.currency}, status ${deal.status}.` +
         (deal.next_step ? ` Planned next step: ${deal.next_step}.` : ""),
-      SYSTEM
+      SYSTEM,
+      auth.credentials
     );
     return { text };
   } catch (e) {
@@ -163,7 +172,8 @@ export async function draftLeadEmail(leadId: string): Promise<AiResult> {
           contact: lead.contact_name,
           role: lead.job_title,
         })}`,
-      SYSTEM
+      SYSTEM,
+      auth.credentials
     );
     return { text };
   } catch (e) {
@@ -189,7 +199,8 @@ export async function companyBrief(companyId: string): Promise<AiResult> {
       `Write a 3-4 sentence internal brief about this client for a sales rep, ` +
         `noting likely priorities and a sensible angle of approach. ` +
         `Do not fabricate specific facts; reason from what's given.\n\n${JSON.stringify(company)}`,
-      SYSTEM
+      SYSTEM,
+      auth.credentials
     );
     return { text };
   } catch (e) {
