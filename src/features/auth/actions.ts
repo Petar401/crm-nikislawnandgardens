@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
 import { getSiteUrl } from "@/lib/utils/site-url";
+import { safeInternalPath } from "@/lib/utils/safe-next";
 import {
   loginSchema,
   signupSchema,
@@ -15,6 +16,20 @@ import {
 
 export interface ActionResult {
   error?: string;
+}
+
+/**
+ * Supabase's auth gateway rejects a request whose API key is missing, invalid,
+ * or no longer exists on the project with a terse message like "Invalid API key"
+ * or "Unregistered API key". That surfaces to end users as a confusing login
+ * failure that looks like a wrong password. Translate it into an actionable
+ * message; pass every other error through unchanged.
+ */
+function friendlyAuthError(message: string): string {
+  if (/api key/i.test(message)) {
+    return "The app can't reach its database right now (Supabase API key is misconfigured). Please contact your administrator.";
+  }
+  return message;
 }
 
 export async function loginAction(values: unknown): Promise<ActionResult> {
@@ -29,10 +44,10 @@ export async function loginAction(values: unknown): Promise<ActionResult> {
     password: parsed.data.password,
   });
 
-  if (error) return { error: error.message };
+  if (error) return { error: friendlyAuthError(error.message) };
 
   revalidatePath("/", "layout");
-  redirect("/");
+  redirect(safeInternalPath(parsed.data.next));
 }
 
 export async function signupAction(values: unknown): Promise<ActionResult> {
@@ -50,7 +65,7 @@ export async function signupAction(values: unknown): Promise<ActionResult> {
     },
   });
 
-  if (error) return { error: error.message };
+  if (error) return { error: friendlyAuthError(error.message) };
 
   // Users are auto-confirmed at the DB level (see migration 0007), but Supabase
   // may still withhold a session at signup when email confirmation is enabled.
