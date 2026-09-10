@@ -11,6 +11,10 @@ import {
 } from "@/features/ai/settings-queries";
 import { listOpenRouterFreeModels } from "@/features/ai/openrouter-models";
 import { AiKeySettings } from "@/features/ai/components/ai-key-settings";
+import { getAuditLogs } from "@/features/audit/queries";
+import { AuditLogTable } from "@/features/audit/components/audit-log-table";
+import { getNotificationPreferences } from "@/features/notifications/queries";
+import { PreferencesPanel } from "@/features/notifications/components/preferences-panel";
 import { TeamSettings } from "@/features/team/components/team-settings";
 import { InviteMemberDialog } from "@/features/team/components/invite-member-dialog";
 import { ChangePasswordForm } from "@/features/auth/components/change-password-form";
@@ -30,14 +34,20 @@ export default async function SettingsPage() {
   const canInvite = allowed.has("team.invite");
   const canEditRoles = allowed.has("team.edit_roles");
   const canManageAiKey = allowed.has("settings.update");
+  const canViewAudit = allowed.has("audit.view");
 
-  const [aiConfigured, aiSettings, openRouterModels] = await Promise.all([
-    isAiConfigured(ctx.workspace.id),
-    canManageAiKey
-      ? getWorkspaceAiSettings(ctx.workspace.id)
-      : Promise.resolve(null),
-    canManageAiKey ? listOpenRouterFreeModels() : Promise.resolve([]),
-  ]);
+  const [aiConfigured, aiSettings, openRouterModels, auditRows, notificationPrefs] =
+    await Promise.all([
+      isAiConfigured(ctx.workspace.id),
+      canManageAiKey
+        ? getWorkspaceAiSettings(ctx.workspace.id)
+        : Promise.resolve(null),
+      canManageAiKey ? listOpenRouterFreeModels() : Promise.resolve([]),
+      canViewAudit
+        ? getAuditLogs(ctx.workspace.id, { limit: 100 })
+        : Promise.resolve([]),
+      getNotificationPreferences(),
+    ]);
 
   return (
     <div>
@@ -97,6 +107,15 @@ export default async function SettingsPage() {
           </CardContent>
         </Card>
 
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Notification preferences</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PreferencesPanel initial={notificationPrefs} />
+          </CardContent>
+        </Card>
+
         {canViewTeam && (
           <div>
             <h2 className="mb-3 text-sm font-medium">
@@ -114,6 +133,17 @@ export default async function SettingsPage() {
               </p>
             )}
           </div>
+        )}
+
+        {canViewAudit && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Audit log</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AuditLogTable rows={auditRows} />
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>
