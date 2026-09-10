@@ -54,6 +54,7 @@ export const PERMISSION_KEYS = [
   "email.view",
   "email.send",
   "leads.import",
+  "settings.tokens",
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -145,6 +146,10 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     permissions: [
       { key: "settings.view", description: "View settings" },
       { key: "settings.update", description: "Update settings" },
+      {
+        key: "settings.tokens",
+        description: "Create and revoke personal API tokens",
+      },
     ],
   },
   {
