@@ -19,6 +19,12 @@ import {
   isEmailEncryptionKeyConfigured,
 } from "@/features/email/settings-queries";
 import { EmailConnectionSettings } from "@/features/email/components/email-connection-settings";
+import {
+  isApolloConfigured,
+  getWorkspaceApolloSettings,
+  isApolloEncryptionKeyConfigured,
+} from "@/features/apollo/settings-queries";
+import { ApolloKeySettings } from "@/features/apollo/components/apollo-key-settings";
 import { getNotificationPreferences } from "@/features/notifications/queries";
 import { PreferencesPanel } from "@/features/notifications/components/preferences-panel";
 import { TeamSettings } from "@/features/team/components/team-settings";
@@ -50,6 +56,8 @@ export default async function SettingsPage() {
     notificationPrefs,
     emailConfigured,
     emailSettings,
+    apolloConfigured,
+    apolloSettings,
   ] = await Promise.all([
     isAiConfigured(ctx.workspace.id),
     canManageAiKey
@@ -63,6 +71,10 @@ export default async function SettingsPage() {
     isEmailConfigured(ctx.workspace.id),
     canManageAiKey
       ? getWorkspaceEmailSettings(ctx.workspace.id)
+      : Promise.resolve(null),
+    isApolloConfigured(ctx.workspace.id),
+    canManageAiKey
+      ? getWorkspaceApolloSettings(ctx.workspace.id)
       : Promise.resolve(null),
   ]);
 
@@ -104,6 +116,14 @@ export default async function SettingsPage() {
                 <Badge variant="outline">Not connected</Badge>
               )}
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Apollo.io</span>
+              {apolloConfigured ? (
+                <Badge variant="secondary">Enabled</Badge>
+              ) : (
+                <Badge variant="outline">Not configured</Badge>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -118,6 +138,20 @@ export default async function SettingsPage() {
                 hasEnvFallback={hasEnvFallbackKey()}
                 openRouterModels={openRouterModels}
                 encryptionConfigured={isAiEncryptionKeyConfigured()}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {canManageAiKey && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Apollo.io API key</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ApolloKeySettings
+                settings={apolloSettings}
+                encryptionConfigured={isApolloEncryptionKeyConfigured()}
               />
             </CardContent>
           </Card>

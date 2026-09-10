@@ -220,11 +220,13 @@ export interface Folder {
 
 export type CampaignFrequency = "manual" | "daily" | "weekly";
 export type LeadStatus = "pending" | "approved" | "rejected" | "converted";
+export type CampaignSource = "openstreetmap" | "apollo";
 
 export interface LeadCampaign {
   id: string;
   workspace_id: string;
   name: string;
+  source: CampaignSource;
   business_description: string;
   target_categories: string[];
   location: string | null;
@@ -252,6 +254,8 @@ export interface Lead {
   phone: string | null;
   email: string | null;
   address_line_1: string | null;
+  state: string | null;
+  postal_code: string | null;
   city: string | null;
   country: string | null;
   industry: string | null;
@@ -271,6 +275,8 @@ export interface Lead {
   created_by: string | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
+  enriched_at: string | null;
+  enriched_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -418,6 +424,14 @@ export interface AuditLog {
   ip: string | null;
   user_agent: string | null;
   created_at: string;
+}
+
+export interface WorkspaceApolloSettings {
+  workspace_id: string;
+  encrypted_api_key: string;
+  key_preview: string;
+  updated_by: string | null;
+  updated_at: string;
 }
 
 export type EmailAuthType = "basic" | "oauth";
