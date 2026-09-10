@@ -7,6 +7,7 @@ import { signOutAction } from "@/features/auth/actions";
 import { ChangePasswordForm } from "@/features/auth/components/change-password-form";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { CommandPaletteTrigger } from "@/components/layout/command-palette";
 import { NotificationsBell } from "@/features/notifications/components/notifications-bell";
 import type { PermissionKey } from "@/lib/constants/permissions";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,9 @@ export function Topbar({
       <div className="flex min-w-0 items-center gap-2">
         <MobileNav allowed={allowed} />
         <p className="truncate text-sm font-semibold">{workspaceName}</p>
+      </div>
+      <div className="hidden flex-1 justify-center px-4 md:flex">
+        <CommandPaletteTrigger />
       </div>
       <div className="flex items-center gap-1">
         <NotificationsBell initialUnread={unreadNotifications} />
