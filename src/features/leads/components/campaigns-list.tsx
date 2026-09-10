@@ -41,6 +41,7 @@ interface CampaignsListProps {
   canCreate: boolean;
   canUpdate: boolean;
   canDelete: boolean;
+  apolloEnabled: boolean;
 }
 
 export function CampaignsList({
@@ -48,6 +49,7 @@ export function CampaignsList({
   canCreate,
   canUpdate,
   canDelete,
+  apolloEnabled,
 }: CampaignsListProps) {
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
@@ -59,18 +61,29 @@ export function CampaignsList({
   function handleRun(campaign: LeadCampaign) {
     setRunningId(campaign.id);
     startTransition(async () => {
-      const result = await runCampaignNow(campaign.id);
-      setRunningId(null);
-      if (result.error) {
-        toast.error(result.error);
-        return;
+      try {
+        const result = await runCampaignNow(campaign.id);
+        setRunningId(null);
+        if (result.error) {
+          toast.error(result.error);
+          return;
+        }
+        toast.success(
+          result.count
+            ? `Found ${result.count} new lead${result.count === 1 ? "" : "s"}`
+            : "No new leads this run"
+        );
+        router.refresh();
+      } catch {
+        // A genuine transport/timeout failure — leads found before the
+        // failure may already be saved, so send the user to check rather
+        // than letting this fall through to the route error boundary.
+        setRunningId(null);
+        toast.error(
+          "Campaign run failed or timed out. Some leads may have already been saved — check the review queue."
+        );
+        router.refresh();
       }
-      toast.success(
-        result.count
-          ? `Found ${result.count} new lead${result.count === 1 ? "" : "s"}`
-          : "No new leads this run"
-      );
-      router.refresh();
     });
   }
 
@@ -163,6 +176,9 @@ export function CampaignsList({
                   <Badge variant="outline">
                     {campaign.auto_create ? "Auto-create" : "Review queue"}
                   </Badge>
+                  {campaign.source === "apollo" && (
+                    <Badge variant="secondary">Apollo.io</Badge>
+                  )}
                   {campaign.min_score > 0 && (
                     <Badge variant="outline">Min score {campaign.min_score}</Badge>
                   )}
@@ -192,13 +208,18 @@ export function CampaignsList({
       )}
 
       {canCreate && (
-        <CampaignForm open={createOpen} onOpenChange={setCreateOpen} />
+        <CampaignForm
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          apolloEnabled={apolloEnabled}
+        />
       )}
       {editing && (
         <CampaignForm
           open={!!editing}
           onOpenChange={(o) => !o && setEditing(null)}
           campaign={editing}
+          apolloEnabled={apolloEnabled}
         />
       )}
       <ConfirmDialog

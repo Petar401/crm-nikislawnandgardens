@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const campaignFrequencies = ["manual", "daily", "weekly"] as const;
+export const campaignSources = ["openstreetmap", "apollo"] as const;
 export const leadStatuses = [
   "pending",
   "approved",
@@ -16,6 +17,7 @@ export const leadStatuses = [
  */
 export const campaignSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
+  source: z.enum(campaignSources),
   business_description: z
     .string()
     .trim()
@@ -23,7 +25,7 @@ export const campaignSchema = z.object({
   target_categories: z
     .string()
     .trim()
-    .min(1, "Add at least one category, e.g. dentist, law firm"),
+    .min(1, "Add at least one category or job title"),
   location: z.string().trim().min(1, "Add a city, region or country"),
   country: z.string().trim().optional(),
   frequency: z.enum(campaignFrequencies),
@@ -62,6 +64,8 @@ export const leadSchema = z.object({
   email: z.string().trim().email("Invalid email").optional().or(z.literal("")),
   phone: z.string().trim().optional().or(z.literal("")),
   address_line_1: z.string().trim().optional().or(z.literal("")),
+  state: z.string().trim().optional().or(z.literal("")),
+  postal_code: z.string().trim().optional().or(z.literal("")),
   city: z.string().trim().optional().or(z.literal("")),
   country: z.string().trim().optional().or(z.literal("")),
   industry: z.string().trim().optional().or(z.literal("")),

@@ -5,6 +5,7 @@ import { ArrowLeft, Building2, User } from "lucide-react";
 import { requireAuthContext } from "@/lib/auth/session";
 import { getPermissionSet } from "@/lib/auth/permissions";
 import { isAiConfigured } from "@/features/ai/settings-queries";
+import { isApolloConfigured } from "@/features/apollo/settings-queries";
 import { getLead } from "@/features/leads/queries";
 import { getMemberOptions } from "@/features/team/queries";
 import { getStages } from "@/features/deals/queries";
@@ -33,23 +34,28 @@ export default async function LeadDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const ctx = await requireAuthContext();
-  const { allowed } = await getPermissionSet();
+  const [ctx, { allowed }] = await Promise.all([
+    requireAuthContext(),
+    getPermissionSet(),
+  ]);
   if (!allowed.has("leads.view")) redirect("/");
 
-  const lead = await getLead(ctx.workspace.id, id);
+  const workspaceId = ctx.workspace.id;
+  const [lead, members, stages, notes, attachments, activities] =
+    await Promise.all([
+      getLead(workspaceId, id),
+      getMemberOptions(workspaceId),
+      getStages(workspaceId),
+      getNotes(workspaceId, { leadId: id }),
+      getEntityAttachments(workspaceId, "lead", id),
+      getEntityActivities(workspaceId, { leadId: id }),
+    ]);
   if (!lead) notFound();
 
-  const [members, stages, notes, attachments, activities] = await Promise.all([
-    getMemberOptions(ctx.workspace.id),
-    getStages(ctx.workspace.id),
-    getNotes(ctx.workspace.id, { leadId: id }),
-    getEntityAttachments(ctx.workspace.id, "lead", id),
-    getEntityActivities(ctx.workspace.id, { leadId: id }),
-  ]);
-
   const aiEnabled =
-    (await isAiConfigured(ctx.workspace.id)) && allowed.has("ai.use");
+    (await isAiConfigured(workspaceId)) && allowed.has("ai.use");
+  const apolloEnabled =
+    allowed.has("leads.import") && (await isApolloConfigured(workspaceId));
   const ownerName =
     members.find((m) => m.userId === lead.owner_user_id)?.name ?? "Unassigned";
   const tier = scoreTier(lead.match_score);
@@ -76,6 +82,7 @@ export default async function LeadDetailPage({
               canUpdate={allowed.has("leads.update")}
               canDelete={allowed.has("leads.delete")}
               canCreateDeal={allowed.has("deals.create")}
+              apolloEnabled={apolloEnabled}
             />
           </div>
         }
@@ -123,7 +130,9 @@ export default async function LeadDetailPage({
               <Row
                 label="Location"
                 value={
-                  [lead.city, lead.country].filter(Boolean).join(", ") || "—"
+                  [lead.address_line_1, lead.city, lead.state, lead.postal_code, lead.country]
+                    .filter(Boolean)
+                    .join(", ") || "—"
                 }
               />
               {lead.website && (

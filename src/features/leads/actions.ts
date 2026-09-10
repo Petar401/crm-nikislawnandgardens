@@ -29,12 +29,16 @@ function toCampaignRow(input: ReturnType<typeof campaignSchema.parse>) {
   const minScore = input.min_score ? parseInt(input.min_score, 10) : 0;
   return {
     name: input.name,
+    source: input.source,
     business_description: input.business_description,
     target_categories: categories,
     location: input.location,
     country: input.country || null,
     frequency: input.frequency,
-    auto_create: input.auto_create,
+    // Apollo campaigns always land in the pending review queue — never
+    // trust the client's auto_create value for them (the UI hides the
+    // toggle, but a direct action call shouldn't be able to bypass this).
+    auto_create: input.source === "apollo" ? false : input.auto_create,
     max_results: clamp(max, 1, 100),
     run_hour: clamp(runHour, 0, 23),
     min_score: clamp(minScore, 0, 100),
@@ -49,6 +53,7 @@ export async function createCampaign(values: unknown): Promise<ActionResult> {
 
   const ctx = await requireAuthContext();
   await requirePermission("leads.create");
+  if (parsed.data.source === "apollo") await requirePermission("leads.import");
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -78,6 +83,7 @@ export async function updateCampaign(
 
   const ctx = await requireAuthContext();
   await requirePermission("leads.update");
+  if (parsed.data.source === "apollo") await requirePermission("leads.import");
 
   const supabase = await createClient();
   const { error } = await supabase
@@ -126,6 +132,7 @@ export async function runCampaignNow(id: string): Promise<RunActionResult> {
     .eq("workspace_id", ctx.workspace.id)
     .maybeSingle<LeadCampaign>();
   if (!campaign) return { error: "Campaign not found." };
+  if (campaign.source === "apollo") await requirePermission("leads.import");
 
   const result = await runCampaign(supabase, campaign, ctx.userId);
   if (result.error) return { error: result.error };
@@ -143,6 +150,8 @@ function toLeadRow(input: ReturnType<typeof leadSchema.parse>) {
     email: empty(input.email),
     phone: empty(input.phone),
     address_line_1: empty(input.address_line_1),
+    state: empty(input.state),
+    postal_code: empty(input.postal_code),
     city: empty(input.city),
     country: empty(input.country),
     industry: empty(input.industry),
@@ -394,21 +403,20 @@ export interface BulkResult {
 }
 
 export async function bulkApproveLeads(ids: string[]): Promise<BulkResult> {
-  let count = 0;
-  for (const id of ids) {
-    const r = await convertLead(id);
-    if (!r.error) count += 1;
-  }
+  // Parallel: convertLead is per-lead and doesn't share DB rows across the
+  // batch, so we don't need serial execution. requireAuthContext /
+  // requirePermission are per-request cached, so the Promise.all only fans
+  // out the DB writes — cutting an N-lead batch from 5×N sequential
+  // round-trips to roughly 5×parallel.
+  const results = await Promise.all(ids.map((id) => convertLead(id)));
+  const count = results.filter((r) => !r.error).length;
   revalidatePath("/leads");
   return { count };
 }
 
 export async function bulkRejectLeads(ids: string[]): Promise<BulkResult> {
-  let count = 0;
-  for (const id of ids) {
-    const r = await rejectLead(id);
-    if (!r.error) count += 1;
-  }
+  const results = await Promise.all(ids.map((id) => rejectLead(id)));
+  const count = results.filter((r) => !r.error).length;
   revalidatePath("/leads");
   return { count };
 }
