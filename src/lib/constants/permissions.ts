@@ -42,6 +42,13 @@ export const PERMISSION_KEYS = [
   "leads.create",
   "leads.update",
   "leads.delete",
+  "invoices.view",
+  "invoices.upload",
+  "invoices.delete",
+  "products.view",
+  "products.create",
+  "products.update",
+  "products.delete",
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -146,6 +153,23 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: "leads.create", description: "Create campaigns & run discovery" },
       { key: "leads.update", description: "Edit campaigns & review leads" },
       { key: "leads.delete", description: "Delete campaigns & leads" },
+    ],
+  },
+  {
+    label: "Invoices",
+    permissions: [
+      { key: "invoices.view", description: "View invoices & receipts" },
+      { key: "invoices.upload", description: "Upload invoices & manage folders" },
+      { key: "invoices.delete", description: "Delete invoices & folders" },
+    ],
+  },
+  {
+    label: "Products",
+    permissions: [
+      { key: "products.view", description: "View products, price books & tax rates" },
+      { key: "products.create", description: "Create products & pricing" },
+      { key: "products.update", description: "Edit products & pricing" },
+      { key: "products.delete", description: "Delete products & pricing" },
     ],
   },
 ];

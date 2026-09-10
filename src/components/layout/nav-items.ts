@@ -6,6 +6,8 @@ import {
   CheckSquare,
   NotebookPen,
   FolderOpen,
+  Receipt,
+  Package,
   Settings,
   Sparkles,
   Target,
@@ -59,6 +61,18 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Files",
     icon: FolderOpen,
     permission: "files.view",
+  },
+  {
+    href: "/invoices",
+    label: "Receipts",
+    icon: Receipt,
+    permission: "invoices.view",
+  },
+  {
+    href: "/products",
+    label: "Products",
+    icon: Package,
+    permission: "products.view",
   },
   {
     href: "/aria",

@@ -289,6 +289,87 @@ export interface MemberPermissionOverride {
   allowed: boolean;
 }
 
+export type InvoiceDocType = "invoice" | "receipt" | "other";
+
+export interface InvoiceFolder {
+  id: string;
+  workspace_id: string;
+  parent_id: string | null;
+  name: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Invoice {
+  id: string;
+  workspace_id: string;
+  folder_id: string | null;
+  doc_type: InvoiceDocType;
+  vendor: string | null;
+  amount: number | null;
+  currency: string | null;
+  invoice_date: string | null;
+  file_name: string;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string | null;
+  file_size: number | null;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProductKind = "one_time" | "recurring";
+export type RecurringInterval = "day" | "week" | "month" | "year";
+
+export interface TaxRate {
+  id: string;
+  workspace_id: string;
+  name: string;
+  rate_bps: number;
+  region: string | null;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Product {
+  id: string;
+  workspace_id: string;
+  sku: string | null;
+  name: string;
+  description: string | null;
+  kind: ProductKind;
+  recurring_interval: RecurringInterval | null;
+  unit: string;
+  default_currency: string;
+  default_price: number;
+  default_tax_rate_id: string | null;
+  is_archived: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PriceBook {
+  id: string;
+  workspace_id: string;
+  name: string;
+  currency: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PriceBookEntry {
+  id: string;
+  price_book_id: string;
+  product_id: string;
+  unit_price: number;
+  created_at: string;
+}
+
 export type AiProvider = "groq" | "openrouter";
 
 export interface WorkspaceAiSettings {
