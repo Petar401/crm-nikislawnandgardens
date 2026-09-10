@@ -3,7 +3,14 @@ import { redirect } from "next/navigation";
 import { requireAuthContext } from "@/lib/auth/session";
 import { getPermissionSet } from "@/lib/auth/permissions";
 import { getMembers } from "@/features/team/queries";
-import { isAiConfigured } from "@/features/ai/gemini";
+import {
+  isAiConfigured,
+  getWorkspaceAiSettings,
+  hasEnvFallbackKey,
+  isAiEncryptionKeyConfigured,
+} from "@/features/ai/settings-queries";
+import { listOpenRouterFreeModels } from "@/features/ai/openrouter-models";
+import { AiKeySettings } from "@/features/ai/components/ai-key-settings";
 import { TeamSettings } from "@/features/team/components/team-settings";
 import { InviteMemberDialog } from "@/features/team/components/invite-member-dialog";
 import { ChangePasswordForm } from "@/features/auth/components/change-password-form";
@@ -22,6 +29,15 @@ export default async function SettingsPage() {
   const canViewTeam = allowed.has("team.view");
   const canInvite = allowed.has("team.invite");
   const canEditRoles = allowed.has("team.edit_roles");
+  const canManageAiKey = allowed.has("settings.update");
+
+  const [aiConfigured, aiSettings, openRouterModels] = await Promise.all([
+    isAiConfigured(ctx.workspace.id),
+    canManageAiKey
+      ? getWorkspaceAiSettings(ctx.workspace.id)
+      : Promise.resolve(null),
+    canManageAiKey ? listOpenRouterFreeModels() : Promise.resolve([]),
+  ]);
 
   return (
     <div>
@@ -47,7 +63,7 @@ export default async function SettingsPage() {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">AI features</span>
-              {isAiConfigured() ? (
+              {aiConfigured ? (
                 <Badge variant="secondary">Enabled</Badge>
               ) : (
                 <Badge variant="outline">Not configured</Badge>
@@ -55,6 +71,22 @@ export default async function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {canManageAiKey && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">AI API key</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AiKeySettings
+                settings={aiSettings}
+                hasEnvFallback={hasEnvFallbackKey()}
+                openRouterModels={openRouterModels}
+                encryptionConfigured={isAiEncryptionKeyConfigured()}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>

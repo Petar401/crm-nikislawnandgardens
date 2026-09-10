@@ -2,8 +2,10 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { generateText, isAiConfigured } from "@/features/ai/gemini";
+import { generateText } from "@/features/ai/generate-text";
+import { resolveAiCredentials } from "@/features/ai/settings-queries";
 import type { LeadCampaign } from "@/lib/db/types";
+import { safeFetchText } from "@/lib/utils/safe-fetch";
 import { searchBusinesses, type OverpassBusiness } from "./overpass";
 
 export interface RunResult {
@@ -31,30 +33,28 @@ function normalizeHost(url: string | null): string | null {
   }
 }
 
-/** Best-effort fetch of a business homepage, returned as a short text snippet. */
+/**
+ * Best-effort fetch of a business homepage, returned as a short text snippet.
+ * Runs through `safeFetchText` so an attacker-controlled OSM website field
+ * cannot be used to reach internal metadata endpoints, private subnets, or
+ * loopback from the server runtime.
+ */
 async function fetchSiteText(website: string | null): Promise<string | null> {
   if (!website) return null;
   const url = website.startsWith("http") ? website : `https://${website}`;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": "CRM-LeadFinder/1.0" },
-    });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
-    const html = await res.text();
-    return html
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 3000);
-  } catch {
-    return null;
-  }
+  const result = await safeFetchText(url, {
+    timeoutMs: 6000,
+    maxBytes: 1_000_000,
+    userAgent: "CRM-LeadFinder/1.0",
+  });
+  if (!result || !result.text) return null;
+  return result.text
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 3000);
 }
 
 /**
@@ -67,7 +67,8 @@ async function scoreAndEnrich(
   campaign: LeadCampaign,
   siteText: string | null
 ): Promise<Enrichment> {
-  if (!isAiConfigured()) {
+  const credentials = await resolveAiCredentials(campaign.workspace_id);
+  if (!credentials) {
     return {
       score: null,
       reason: null,
@@ -102,7 +103,8 @@ async function scoreAndEnrich(
   try {
     const raw = await generateText(
       prompt,
-      "You are a B2B sales research assistant. Output strict JSON only. Never invent facts."
+      "You are a B2B sales research assistant. Output strict JSON only. Never invent facts.",
+      credentials
     );
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return emptyEnrichment();
