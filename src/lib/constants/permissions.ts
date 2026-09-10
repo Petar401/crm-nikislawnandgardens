@@ -49,6 +49,8 @@ export const PERMISSION_KEYS = [
   "products.create",
   "products.update",
   "products.delete",
+  "notifications.view",
+  "audit.view",
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -170,6 +172,18 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: "products.create", description: "Create products & pricing" },
       { key: "products.update", description: "Edit products & pricing" },
       { key: "products.delete", description: "Delete products & pricing" },
+    ],
+  },
+  {
+    label: "Notifications",
+    permissions: [
+      { key: "notifications.view", description: "View your notifications" },
+    ],
+  },
+  {
+    label: "Audit",
+    permissions: [
+      { key: "audit.view", description: "View the workspace audit log" },
     ],
   },
 ];

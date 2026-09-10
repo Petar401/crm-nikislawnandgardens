@@ -11,6 +11,7 @@ import {
   getMemberPermissionState,
   type MemberPermissionState,
 } from "@/features/permissions/queries";
+import { auditLog } from "@/features/audit/log";
 import type { WorkspaceMember } from "@/lib/db/types";
 
 export interface ActionResult {
@@ -89,6 +90,18 @@ export async function saveMemberPermissions(
       .insert(rows);
     if (insertError) return { error: insertError.message };
   }
+
+  await auditLog({
+    workspaceId: ctx.workspace.id,
+    actorUserId: ctx.userId,
+    action: "member.permissions_updated",
+    entityType: "member",
+    entityId: member.id,
+    after: {
+      is_full_access: parsed.data.isFullAccess,
+      permissions: parsed.data.permissions,
+    },
+  });
 
   revalidatePath("/settings");
   return {};
