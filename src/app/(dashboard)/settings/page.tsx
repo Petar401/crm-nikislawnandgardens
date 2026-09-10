@@ -13,6 +13,12 @@ import { listOpenRouterFreeModels } from "@/features/ai/openrouter-models";
 import { AiKeySettings } from "@/features/ai/components/ai-key-settings";
 import { getAuditLogs } from "@/features/audit/queries";
 import { AuditLogTable } from "@/features/audit/components/audit-log-table";
+import {
+  isEmailConfigured,
+  getWorkspaceEmailSettings,
+  isEmailEncryptionKeyConfigured,
+} from "@/features/email/settings-queries";
+import { EmailConnectionSettings } from "@/features/email/components/email-connection-settings";
 import { getNotificationPreferences } from "@/features/notifications/queries";
 import { PreferencesPanel } from "@/features/notifications/components/preferences-panel";
 import { TeamSettings } from "@/features/team/components/team-settings";
@@ -36,18 +42,29 @@ export default async function SettingsPage() {
   const canManageAiKey = allowed.has("settings.update");
   const canViewAudit = allowed.has("audit.view");
 
-  const [aiConfigured, aiSettings, openRouterModels, auditRows, notificationPrefs] =
-    await Promise.all([
-      isAiConfigured(ctx.workspace.id),
-      canManageAiKey
-        ? getWorkspaceAiSettings(ctx.workspace.id)
-        : Promise.resolve(null),
-      canManageAiKey ? listOpenRouterFreeModels() : Promise.resolve([]),
-      canViewAudit
-        ? getAuditLogs(ctx.workspace.id, { limit: 100 })
-        : Promise.resolve([]),
-      getNotificationPreferences(),
-    ]);
+  const [
+    aiConfigured,
+    aiSettings,
+    openRouterModels,
+    auditRows,
+    notificationPrefs,
+    emailConfigured,
+    emailSettings,
+  ] = await Promise.all([
+    isAiConfigured(ctx.workspace.id),
+    canManageAiKey
+      ? getWorkspaceAiSettings(ctx.workspace.id)
+      : Promise.resolve(null),
+    canManageAiKey ? listOpenRouterFreeModels() : Promise.resolve([]),
+    canViewAudit
+      ? getAuditLogs(ctx.workspace.id, { limit: 100 })
+      : Promise.resolve([]),
+    getNotificationPreferences(),
+    isEmailConfigured(ctx.workspace.id),
+    canManageAiKey
+      ? getWorkspaceEmailSettings(ctx.workspace.id)
+      : Promise.resolve(null),
+  ]);
 
   return (
     <div>
@@ -79,6 +96,14 @@ export default async function SettingsPage() {
                 <Badge variant="outline">Not configured</Badge>
               )}
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Business email</span>
+              {emailConfigured ? (
+                <Badge variant="secondary">Connected</Badge>
+              ) : (
+                <Badge variant="outline">Not connected</Badge>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -93,6 +118,20 @@ export default async function SettingsPage() {
                 hasEnvFallback={hasEnvFallbackKey()}
                 openRouterModels={openRouterModels}
                 encryptionConfigured={isAiEncryptionKeyConfigured()}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {canManageAiKey && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Email account</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <EmailConnectionSettings
+                settings={emailSettings}
+                encryptionConfigured={isEmailEncryptionKeyConfigured()}
               />
             </CardContent>
           </Card>

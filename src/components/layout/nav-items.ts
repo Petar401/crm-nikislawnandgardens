@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Receipt,
   Package,
+  Mail,
   Settings,
   Sparkles,
   Target,
@@ -43,6 +44,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Leads",
     icon: Target,
     permission: "leads.view",
+  },
+  {
+    href: "/email",
+    label: "Email",
+    icon: Mail,
+    permission: "email.view",
   },
   {
     href: "/tasks",
